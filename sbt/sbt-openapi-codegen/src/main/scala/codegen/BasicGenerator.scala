@@ -18,6 +18,7 @@ object BasicGenerator {
   val endpointGenerator = new EndpointGenerator()
 
   def generateObjects(doc: OpenapiDocument, packagePath: String, objName: String): String = {
+    val (ref, gen) = classGenerator.classDefs(doc)
     s"""|
         |package $packagePath
         |
@@ -25,9 +26,9 @@ object BasicGenerator {
         |
         |${indent(2)(imports)}
         |
-        |${indent(2)(classGenerator.classDefs(doc))}
+        |${indent(2)(gen)}
         |
-        |${indent(2)(endpointGenerator.endpointDefs(doc))}
+        |${indent(2)(endpointGenerator.endpointDefs(ref, doc))}
         |
         |}
         |""".stripMargin
@@ -60,7 +61,7 @@ object BasicGenerator {
         ("Boolean", nb)
       case OpenapiSchemaRef(t) =>
         (t.split('/').last, false)
-      case _ => throw new NotImplementedError("Not all simple types supported!")
+      case t => throw new NotImplementedError(s"Not all simple types supported! $t")
     }
   }
 }

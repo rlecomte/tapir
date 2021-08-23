@@ -9,8 +9,8 @@ class EndpointGenerator {
 
   private[codegen] def allEndpoints: String = "generatedEndpoints"
 
-  def endpointDefs(doc: OpenapiDocument): String = {
-    val ge = doc.paths.flatMap(generatedEndpoints)
+  def endpointDefs(ref: GeneratedClasses, doc: OpenapiDocument): String = {
+    val ge = doc.paths.flatMap(generatedEndpoints(ref, _))
     val definitions = ge
       .map { case (name, definition) =>
         s"""|val $name =
@@ -26,14 +26,14 @@ class EndpointGenerator {
         |""".stripMargin
   }
 
-  private[codegen] def generatedEndpoints(p: OpenapiPath): Seq[(String, String)] = {
+  private[codegen] def generatedEndpoints(ref: GeneratedClasses, p: OpenapiPath): Seq[(String, String)] = {
     p.methods.map { m =>
       val definition =
         s"""|endpoint
             |  .${m.methodType}
-            |  ${urlMapper(p.url, m.parameters)}
-            |${indent(2)(ins(m.parameters, m.requestBody))}
-            |${indent(2)(outs(m.responses))}
+            |  ${urlMapper(ref, p.url, m.parameters)}
+            |${indent(2)(ins(ref, m.parameters, m.requestBody))}
+            |${indent(2)(outs(ref, m.responses))}
             |""".stripMargin
 
       val name = m.methodType + p.url.split('/').map(_.replace("{", "").replace("}", "").toLowerCase.capitalize).mkString
@@ -41,7 +41,7 @@ class EndpointGenerator {
     }
   }
 
-  private def urlMapper(url: String, parameters: Seq[OpenapiParameter]): String = {
+  private def urlMapper(ref: GeneratedClasses, url: String, parameters: Seq[OpenapiParameter]): String = {
     //.in(("books" / path[String]("genre") / path[Int]("year")).mapTo[BooksFromYear])
     val inPath = url.split('/').filter(_.nonEmpty) map { segment =>
       if (segment.startsWith("{")) {
@@ -63,7 +63,7 @@ class EndpointGenerator {
     ".in((" + inPath.mkString(" / ") + "))"
   }
 
-  private def ins(parameters: Seq[OpenapiParameter], requestBody: Option[OpenapiRequestBody]): String = {
+  private def ins(ref: GeneratedClasses, parameters: Seq[OpenapiParameter], requestBody: Option[OpenapiRequestBody]): String = {
     //.in(query[Limit]("limit").description("Maximum number of books to retrieve"))
     //.in(header[AuthToken]("X-Auth-Token"))
     val params = parameters
@@ -81,13 +81,13 @@ class EndpointGenerator {
 
     val rqBody = requestBody.fold("") { b =>
       if (b.content.size != 1) throw new NotImplementedError("We can handle only one requestBody content!")
-      s"\n.in(${contentTypeMapper(b.content.head.contentType, b.content.head.schema, b.required)})"
+      s"\n.in(${contentTypeMapper(ref, b.content.head.contentType, b.content.head.schema, b.required)})"
     }
 
     params + rqBody
   }
 
-  private def outs(responses: Seq[OpenapiResponse]) = {
+  private def outs(ref: GeneratedClasses, responses: Seq[OpenapiResponse]) = {
     //.errorOut(stringBody)
     //.out(jsonBody[List[Book]])
     responses
@@ -96,10 +96,10 @@ class EndpointGenerator {
         resp.code match {
           case "200" =>
             val content = resp.content.head
-            s".out(${contentTypeMapper(content.contentType, content.schema)})"
+            s".out(${contentTypeMapper(ref, content.contentType, content.schema)})"
           case "default" =>
             val content = resp.content.head
-            s".errorOut(${contentTypeMapper(content.contentType, content.schema)})"
+            s".errorOut(${contentTypeMapper(ref, content.contentType, content.schema)})"
           case _ =>
             throw new NotImplementedError("Statuscode mapping is incomplete!")
         }
@@ -108,19 +108,20 @@ class EndpointGenerator {
       .mkString("\n")
   }
 
-  private def contentTypeMapper(contentType: String, schema: OpenapiSchemaType, required: Boolean = true) = {
+  private def contentTypeMapper(ref: GeneratedClasses, contentType: String, schema: OpenapiSchemaType, required: Boolean = true) = {
     contentType match {
       case "text/plain" =>
         "stringBody"
       case "application/json" =>
         val outT = schema match {
+          case OpenapiSchemaType.OpenapiSchemaRef(name) => getObjectType(name, ref)
           case st: OpenapiSchemaSimpleType =>
             val (t, _) = mapSchemaSimpleTypeToType(st)
             t
           case OpenapiSchemaArray(st: OpenapiSchemaSimpleType, _) =>
             val (t, _) = mapSchemaSimpleTypeToType(st)
             s"List[$t]"
-          case _ => throw new NotImplementedError("Can't create non-simple or array params as output")
+          case e => throw new NotImplementedError(s"Can't create non-simple or array params as output $e")
         }
         val req = if (required) outT else s"Option[$outT]"
         s"jsonBody[$req]"
@@ -128,4 +129,10 @@ class EndpointGenerator {
     }
   }
 
+  private def getObjectType(refName: String, ref: GeneratedClasses): String = {
+    ref.map
+      .get(ComponentName(refName.stripPrefix("#/components/schemas/")))
+      .getOrElse(throw new RuntimeException(s"Can't find ref $refName"))
+      .value
+  }
 }

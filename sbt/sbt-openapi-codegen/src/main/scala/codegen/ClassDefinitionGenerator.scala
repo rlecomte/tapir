@@ -3,19 +3,34 @@ package codegen
 import codegen.BasicGenerator.{indent, mapSchemaSimpleTypeToType}
 import codegen.openapi.models.OpenapiModels.OpenapiDocument
 import codegen.openapi.models.OpenapiSchemaType.{OpenapiSchemaArray, OpenapiSchemaObject, OpenapiSchemaSimpleType}
+import cats.data.State
+
+case class ComponentName(value: String) extends AnyVal
+case class ComponentClassName(value: String) extends AnyVal
+case class GeneratedClasses(map: Map[ComponentName, ComponentClassName]) extends AnyVal
 
 class ClassDefinitionGenerator {
 
-  def classDefs(doc: OpenapiDocument): String = {
-    val classes = doc.components.schemas.flatMap {
-      case (name, obj: OpenapiSchemaObject) =>
-        generateClass(name, obj)
-      case _ => throw new NotImplementedError("Only objects supported!")
-    }
-    classes.mkString("\n")
+  type S[A] = State[GeneratedClasses, A]
+  import cats.implicits._
+  def classDefs(doc: OpenapiDocument): (GeneratedClasses, String) = {
+    val (ref, classes) = doc.components.schemas.toList
+      .foldMapM[S, List[String]] {
+        case (name, obj: OpenapiSchemaObject) =>
+          val (className, genCode) = generateClass(name, obj)
+          State.modify[GeneratedClasses](s => GeneratedClasses(s.map + (ComponentName(name) -> className))).as(genCode.toList)
+        case (name, obj: OpenapiSchemaSimpleType) =>
+          val (ref, alias) = generateAlias(name, obj)
+          State.modify[GeneratedClasses](s => GeneratedClasses(s.map + (ComponentName(name) -> ref))).as(List(alias))
+        case (n, _) => throw new NotImplementedError(s"Only objects supported! $n")
+      }
+      .run(GeneratedClasses(Map.empty))
+      .value
+
+    (ref, classes.mkString("\n"))
   }
 
-  private[codegen] def generateClass(name: String, obj: OpenapiSchemaObject): Seq[String] = {
+  private[codegen] def generateClass(name: String, obj: OpenapiSchemaObject): (ComponentClassName, Seq[String]) = {
     def addName(parentName: String, key: String) = parentName + key.replace('_', ' ').replace('-', ' ').capitalize.replace(" ", "")
     def rec(name: String, obj: OpenapiSchemaObject, acc: List[String]): Seq[String] = {
       val innerClasses = obj.properties
@@ -42,8 +57,17 @@ class ClassDefinitionGenerator {
           |)""".stripMargin :: innerClasses ::: acc
     }
 
-    rec(addName("", name), obj, Nil)
+    val refName = addName("", name)
+    (ComponentClassName(refName), rec(refName, obj, Nil))
   }
+
+  private[codegen] def generateAlias(name: String, simpleType: OpenapiSchemaSimpleType): (ComponentClassName, String) = {
+    val n = name.replace('_', ' ').replace('-', ' ').capitalize.replace(" ", "")
+    val t = mapSchemaSimpleTypeToType(simpleType)
+    (ComponentClassName(n), s"type $n = ${t._1}")
+  }
+
+  private[codegen] def generateCoproduct(name: String, objects: Seq[])
 
   private val reservedKeys = scala.reflect.runtime.universe.asInstanceOf[scala.reflect.internal.SymbolTable].nme.keywords.map(_.toString)
 

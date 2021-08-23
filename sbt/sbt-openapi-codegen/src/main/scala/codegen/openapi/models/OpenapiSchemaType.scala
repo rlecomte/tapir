@@ -10,7 +10,7 @@ object OpenapiSchemaType {
 
   //https://swagger.io/docs/specification/data-models/oneof-anyof-allof-not/
   case class OpenapiSchemaOneOf(
-      types: Seq[OpenapiSchemaSimpleType]
+      types: Seq[OpenapiSchemaType]
   ) extends OpenapiSchemaMixedType {
     val nullable: Boolean = false
   }
@@ -220,7 +220,7 @@ object OpenapiSchemaType {
         .downField("type")
         .as[Option[String]]
         .ensure(DecodingFailure("Given type is not object!", c.history))(v => v.forall(_ == "object"))
-      f <- c.downField("properties").as[Map[String, OpenapiSchemaType]]
+      f <- c.downField("properties").as[Option[Map[String, OpenapiSchemaType]]].map(_.getOrElse(Map.empty))
       r <- c.downField("required").as[Option[Seq[String]]]
       nb <- c.downField("nullable").as[Option[Boolean]]
     } yield {
