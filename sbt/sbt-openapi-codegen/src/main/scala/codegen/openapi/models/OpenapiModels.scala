@@ -67,6 +67,17 @@ object OpenapiModels {
   import io.circe._
   import io.circe.generic.semiauto._
 
+  implicit val openapiResponseDecoder: Decoder[OpenapiResponse] = { (c: HCursor) =>
+    for {
+      code <- c.downField("code").as[String]
+      description <- c.downField("description").as[String]
+      content <- c
+        .downField("content")
+        .as[Option[Seq[OpenapiResponseContent]]]
+        .map(_.getOrElse(Seq(OpenapiResponseContent("text/plain", OpenapiSchemaType.OpenapiSchemaString(true)))))
+    } yield OpenapiResponse(code, description, content)
+  }
+
   implicit val OpenapiResponseContentDecoder: Decoder[Seq[OpenapiResponseContent]] = { (c: HCursor) =>
     case class Holder(d: OpenapiSchemaType)
     implicit val InnerDecoder: Decoder[Holder] = { (c: HCursor) =>
@@ -87,7 +98,7 @@ object OpenapiModels {
     implicit val InnerDecoder: Decoder[(String, Seq[OpenapiResponseContent])] = { (c: HCursor) =>
       for {
         description <- c.downField("description").as[String]
-        content <- c.downField("content").as[Seq[OpenapiResponseContent]]
+        content <- c.downField("content").as[Option[Seq[OpenapiResponseContent]]].map(_.getOrElse(Seq()))
       } yield {
         (description, content)
       }
@@ -141,7 +152,7 @@ object OpenapiModels {
     implicit val InnerDecoder: Decoder[(Seq[OpenapiParameter], Seq[OpenapiResponse], Option[OpenapiRequestBody], Option[String])] = {
       (c: HCursor) =>
         for {
-          parameters <- c.downField("parameters").as[Seq[OpenapiParameter]]
+          parameters <- c.downField("parameters").as[Option[Seq[OpenapiParameter]]].map(_.getOrElse(Seq()))
           responses <- c.downField("responses").as[Seq[OpenapiResponse]]
           requestBody <- c.downField("requestBody").as[Option[OpenapiRequestBody]]
           summary <- c.downField("summary").as[Option[String]]

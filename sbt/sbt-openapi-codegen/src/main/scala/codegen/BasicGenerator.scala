@@ -11,6 +11,7 @@ import codegen.openapi.models.OpenapiSchemaType.{
   OpenapiSchemaSimpleType,
   OpenapiSchemaString
 }
+import codegen.openapi.models.OpenapiSchemaType
 
 object BasicGenerator {
 
@@ -18,6 +19,7 @@ object BasicGenerator {
   val endpointGenerator = new EndpointGenerator()
 
   def generateObjects(doc: OpenapiDocument, packagePath: String, objName: String): String = {
+    val (ref, gen) = classGenerator.classDefs(doc)
     s"""|
         |package $packagePath
         |
@@ -25,9 +27,9 @@ object BasicGenerator {
         |
         |${indent(2)(imports)}
         |
-        |${indent(2)(classGenerator.classDefs(doc))}
+        |${indent(2)(gen)}
         |
-        |${indent(2)(endpointGenerator.endpointDefs(doc))}
+        |${indent(2)(endpointGenerator.endpointDefs(ref, doc))}
         |
         |}
         |""".stripMargin
@@ -38,6 +40,8 @@ object BasicGenerator {
       |import sttp.tapir.json.circe._
       |import sttp.tapir.generic.auto._
       |import io.circe.generic.auto._
+      |import io.circe.syntax._
+      |import cats.syntax.functor._
       |""".stripMargin
 
   def indent(i: Int)(str: String): String = {
@@ -60,7 +64,11 @@ object BasicGenerator {
         ("Boolean", nb)
       case OpenapiSchemaRef(t) =>
         (t.split('/').last, false)
-      case _ => throw new NotImplementedError("Not all simple types supported!")
+      case OpenapiSchemaType.OpenapiSchemaDate(nb) =>
+        ("String", nb)
+      case OpenapiSchemaType.OpenapiSchemaDateTime(nb) =>
+        ("String", nb)
+      case t => throw new NotImplementedError(s"Not all simple types supported! $t")
     }
   }
 }
