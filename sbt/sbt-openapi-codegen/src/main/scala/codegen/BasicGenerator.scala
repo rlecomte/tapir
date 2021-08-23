@@ -39,6 +39,8 @@ object BasicGenerator {
       |import sttp.tapir.json.circe._
       |import sttp.tapir.generic.auto._
       |import io.circe.generic.auto._
+      |import io.circe.syntax._
+      |import cats.syntax.functor._
       |""".stripMargin
 
   def indent(i: Int)(str: String): String = {

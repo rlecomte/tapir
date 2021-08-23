@@ -2,8 +2,9 @@ package codegen
 
 import codegen.BasicGenerator.{indent, mapSchemaSimpleTypeToType}
 import codegen.openapi.models.OpenapiModels.OpenapiDocument
-import codegen.openapi.models.OpenapiSchemaType.{OpenapiSchemaArray, OpenapiSchemaObject, OpenapiSchemaSimpleType}
+import codegen.openapi.models.OpenapiSchemaType.{OpenapiSchemaArray, OpenapiSchemaObject, OpenapiSchemaSimpleType, OpenapiSchemaOneOf}
 import cats.data.State
+import codegen.openapi.models.OpenapiSchemaType
 
 case class ComponentName(value: String) extends AnyVal
 case class ComponentClassName(value: String) extends AnyVal
@@ -16,6 +17,9 @@ class ClassDefinitionGenerator {
   def classDefs(doc: OpenapiDocument): (GeneratedClasses, String) = {
     val (ref, classes) = doc.components.schemas.toList
       .foldMapM[S, List[String]] {
+        case (name, oneOf: OpenapiSchemaOneOf) =>
+          val (className, sealedTrait) = generateCoproduct(name, oneOf)
+          State.modify[GeneratedClasses](s => GeneratedClasses(s.map + (ComponentName(name) -> className))).as(List(sealedTrait))
         case (name, obj: OpenapiSchemaObject) =>
           val (className, genCode) = generateClass(name, obj)
           State.modify[GeneratedClasses](s => GeneratedClasses(s.map + (ComponentName(name) -> className))).as(genCode.toList)
@@ -67,7 +71,45 @@ class ClassDefinitionGenerator {
     (ComponentClassName(n), s"type $n = ${t._1}")
   }
 
-  private[codegen] def generateCoproduct(name: String, objects: Seq[])
+  private[codegen] def generateCoproduct(name: String, oneOf: OpenapiSchemaType.OpenapiSchemaOneOf): (ComponentClassName, String) = {
+    def addName(parentName: String, key: String) = parentName + key.replace('_', ' ').replace('-', ' ').capitalize.replace(" ", "")
+
+    val refs: Seq[OpenapiSchemaType.OpenapiSchemaRef] = oneOf.types.collect {
+      case ref: OpenapiSchemaType.OpenapiSchemaRef => ref
+      case _                                       => throw new RuntimeException("Unsupported type in oneOf")
+    }
+
+    val refName = addName("", name)
+    val refsType = refs.map(_.name).map(addName("", _))
+    val subDefs = refsType.map(t => s"case class ${t}_(value: $t) extends $refName")
+
+    val circeEncoders = refsType.map(t => s"case ${t}_(v) => v.asJson")
+
+    val encoder = s"""|implicit val encode$refName: Encoder[$refName] = Encoder.instance {
+                      |${indent(2)(circeEncoders.mkString("\n"))}
+                      |}
+                   """
+
+    val circeDecoders = refsType.map(t => s"Decoder[$t].widen")
+
+    //TODO deal with discriminator
+    val decoder = s"""|implicit val decode$refName: Decoder[$refName] = List[Decoder[$refName]](
+                      |${indent(2)(circeDecoders.mkString("\n"))}
+                      |).reduceLeft(_ or _)
+                  """
+
+    val gen = s"""|sealed trait $refName
+                  |object $refName {
+                  |${indent(2)(subDefs.mkString("\n"))}
+                  |
+                  |${indent(2)(decoder)}
+                  |
+                  |${indent(2)(encoder)}
+                  |}
+              """
+
+    (ComponentClassName(refName), gen)
+  }
 
   private val reservedKeys = scala.reflect.runtime.universe.asInstanceOf[scala.reflect.internal.SymbolTable].nme.keywords.map(_.toString)
 
