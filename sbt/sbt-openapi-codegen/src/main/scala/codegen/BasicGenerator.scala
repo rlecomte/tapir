@@ -11,6 +11,7 @@ import codegen.openapi.models.OpenapiSchemaType.{
   OpenapiSchemaSimpleType,
   OpenapiSchemaString
 }
+import codegen.openapi.models.OpenapiSchemaType
 
 object BasicGenerator {
 
@@ -63,6 +64,10 @@ object BasicGenerator {
         ("Boolean", nb)
       case OpenapiSchemaRef(t) =>
         (t.split('/').last, false)
+      case OpenapiSchemaType.OpenapiSchemaDate(nb) =>
+        ("String", nb)
+      case OpenapiSchemaType.OpenapiSchemaDateTime(nb) =>
+        ("String", nb)
       case t => throw new NotImplementedError(s"Not all simple types supported! $t")
     }
   }

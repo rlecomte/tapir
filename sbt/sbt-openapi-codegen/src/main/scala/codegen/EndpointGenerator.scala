@@ -4,6 +4,7 @@ import codegen.BasicGenerator.{indent, mapSchemaSimpleTypeToType}
 import codegen.openapi.models.OpenapiModels.{OpenapiDocument, OpenapiParameter, OpenapiPath, OpenapiRequestBody, OpenapiResponse}
 import codegen.openapi.models.OpenapiSchemaType
 import codegen.openapi.models.OpenapiSchemaType.{OpenapiSchemaArray, OpenapiSchemaSimpleType}
+import _root_.codegen.openapi.models.OpenapiModels
 
 class EndpointGenerator {
 
@@ -92,16 +93,13 @@ class EndpointGenerator {
     //.out(jsonBody[List[Book]])
     responses
       .map { resp =>
-        if (resp.content.size != 1) throw new NotImplementedError("We can handle only one return content!")
         resp.code match {
           case "200" =>
-            val content = resp.content.head
+            val content = resp.content.headOption.getOrElse(OpenapiModels.OpenapiResponseContent("text/plain", OpenapiSchemaType.OpenapiSchemaString(true)))
             s".out(${contentTypeMapper(ref, content.contentType, content.schema)})"
-          case "default" =>
-            val content = resp.content.head
-            s".errorOut(${contentTypeMapper(ref, content.contentType, content.schema)})"
           case _ =>
-            throw new NotImplementedError("Statuscode mapping is incomplete!")
+            val content = resp.content.headOption.getOrElse(OpenapiModels.OpenapiResponseContent("text/plain", OpenapiSchemaType.OpenapiSchemaString(true)))
+            s".errorOut(${contentTypeMapper(ref, content.contentType, content.schema)})"
         }
       }
       .sorted

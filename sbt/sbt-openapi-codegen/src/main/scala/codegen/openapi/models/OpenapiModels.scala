@@ -67,6 +67,17 @@ object OpenapiModels {
   import io.circe._
   import io.circe.generic.semiauto._
 
+  implicit val openapiResponseDecoder: Decoder[OpenapiResponse] = { (c: HCursor) =>
+    for {
+      code <- c.downField("code").as[String]
+      description <- c.downField("description").as[String]
+      content <- c
+        .downField("content")
+        .as[Option[Seq[OpenapiResponseContent]]]
+        .map(_.getOrElse(Seq(OpenapiResponseContent("text/plain", OpenapiSchemaType.OpenapiSchemaString(true)))))
+    } yield OpenapiResponse(code, description, content)
+  }
+
   implicit val OpenapiResponseContentDecoder: Decoder[Seq[OpenapiResponseContent]] = { (c: HCursor) =>
     case class Holder(d: OpenapiSchemaType)
     implicit val InnerDecoder: Decoder[Holder] = { (c: HCursor) =>

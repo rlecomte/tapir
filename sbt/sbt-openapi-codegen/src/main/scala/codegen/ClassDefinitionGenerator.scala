@@ -80,23 +80,21 @@ class ClassDefinitionGenerator {
     }
 
     val refName = addName("", name)
-    val refsType = refs.map(_.name).map(addName("", _))
+    val refsType = refs.map(_.name).map(e => addName("", e.trim.stripPrefix("#/components/schemas/")))
     val subDefs = refsType.map(t => s"case class ${t}_(value: $t) extends $refName")
 
     val circeEncoders = refsType.map(t => s"case ${t}_(v) => v.asJson")
 
     val encoder = s"""|implicit val encode$refName: Encoder[$refName] = Encoder.instance {
                       |${indent(2)(circeEncoders.mkString("\n"))}
-                      |}
-                   """
+                      |}""".stripMargin
 
     val circeDecoders = refsType.map(t => s"Decoder[$t].widen")
 
     //TODO deal with discriminator
     val decoder = s"""|implicit val decode$refName: Decoder[$refName] = List[Decoder[$refName]](
-                      |${indent(2)(circeDecoders.mkString("\n"))}
-                      |).reduceLeft(_ or _)
-                  """
+                      |${indent(2)(circeDecoders.mkString(",\n"))}
+                      |).reduceLeft(_ or _)""".stripMargin
 
     val gen = s"""|sealed trait $refName
                   |object $refName {
@@ -105,8 +103,7 @@ class ClassDefinitionGenerator {
                   |${indent(2)(decoder)}
                   |
                   |${indent(2)(encoder)}
-                  |}
-              """
+                  |}""".stripMargin
 
     (ComponentClassName(refName), gen)
   }
